@@ -1,0 +1,73 @@
+# Builds waddle, a licensed extension, for every platform with hugr-lab/extension-ci-tools (DuckDB's
+# ci-tools with the kista SDK), and on a v* tag publishes the builds to a kista channel when the
+# repository's KISTA_URL variable is set.
+#
+# The fork's commit is every hugr-lab/extension-ci-tools @<commit> and ci_tools_version below, and the
+# extension-ci-tools submodule's: move them together (docs/UPDATING.md). DuckDB is the duckdb
+# submodule's commit.
+name: Distribution
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # A tag build must not trust the SDK's test key, whose private half is public: license-key.pem
+  # must be the public key of the issuer that signs this extension's licences.
+  license-key:
+    name: Licence key
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - run: git submodule update --init --depth 1 extension-ci-tools
+      - run: scripts/check-license-key.sh "$GITHUB_REF"
+
+  build:
+    name: Build extension binaries
+    needs: license-key
+    uses: hugr-lab/extension-ci-tools/.github/workflows/_extension_distribution.yml@3c1912caa5a714e2a75d8a0c0b919f079576bea7 # kista sdk-v0.1.0
+    with:
+      ci_tools_version: 3c1912caa5a714e2a75d8a0c0b919f079576bea7
+      # the fork's ci-tools, not DuckDB's: the SDK is there
+      override_ci_tools_repository: hugr-lab/extension-ci-tools
+      extension_name: waddle
+
+  code-quality-check:
+    name: Code Quality Check
+    uses: hugr-lab/extension-ci-tools/.github/workflows/_extension_code_quality.yml@3c1912caa5a714e2a75d8a0c0b919f079576bea7 # kista sdk-v0.1.0
+    with:
+      ci_tools_version: 3c1912caa5a714e2a75d8a0c0b919f079576bea7
+      override_ci_tools_repository: hugr-lab/extension-ci-tools
+      extension_name: waddle
+      format_checks: 'format;tidy'
+
+  # Each build goes to kista as it is: kista checks it and signs it with the channel's key. Without
+  # KISTA_API_KEY, GitHub's OIDC token: bind this workflow to a publisher in kista (README.md).
+  kista:
+    name: Publish to kista
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && vars.KISTA_URL != ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: hugr-lab/extension-ci-tools/.github/workflows/_kista_publish.yml@3c1912caa5a714e2a75d8a0c0b919f079576bea7 # kista sdk-v0.1.0
+    with:
+      extension_name: waddle
+      ci_tools_version: 3c1912caa5a714e2a75d8a0c0b919f079576bea7
+      kista_url: ${{ vars.KISTA_URL }}
+      tenant: ${{ vars.KISTA_TENANT }}
+      channel: ${{ vars.KISTA_CHANNEL }}
+      visibility: ${{ vars.KISTA_VISIBILITY || 'private' }}
+      environment: ${{ vars.KISTA_ENVIRONMENT || '' }}
+    secrets:
+      KISTA_API_KEY: ${{ secrets.KISTA_API_KEY }}
