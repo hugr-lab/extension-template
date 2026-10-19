@@ -2,8 +2,9 @@
 # ci-tools with the kista SDK), and on a v* tag publishes the builds to a kista channel when the
 # repository's KISTA_URL variable is set.
 #
-# The fork's commit is pinned three times below and in the extension-ci-tools submodule: move them
-# together. DuckDB is the duckdb submodule's commit.
+# The fork's commit is every hugr-lab/extension-ci-tools @<commit> and ci_tools_version below, and the
+# extension-ci-tools submodule's: move them together (docs/UPDATING.md). DuckDB is the duckdb
+# submodule's commit.
 name: Distribution
 on:
   push:

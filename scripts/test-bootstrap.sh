@@ -25,14 +25,17 @@ copy() { # a fresh clone of HEAD, as "Use this template" makes one
 
 # names and arguments that bootstrap refuses, leaving the copy as it was
 copy refused
-for args in "" "1abc" "Abc" "a-b" "a b" "_a" "$(printf 'a%.0s' {1..65})" "a --bogus" "a b --licensed"; do
-	# shellcheck disable=SC2086
-	if (cd "$out/refused" && ./bootstrap.sh $args >/dev/null 2>&1); then
-		fail "bootstrap accepted '$args'"
+# each case is its arguments, separated by |
+for case in "" "1abc" "Abc" "a-b" "a b" "_a" "$(printf 'a%.0s' {1..65})" "a|--bogus" "a|b|--licensed"; do
+	IFS='|' read -r -a args <<<"$case"
+	if (cd "$out/refused" && ./bootstrap.sh ${args[@]+"${args[@]}"} >/dev/null 2>&1); then
+		fail "bootstrap accepted '$case'"
 	fi
 done
 [ -z "$(git -C "$out/refused" status --porcelain)" ] || fail "a refused bootstrap changed the copy"
-(cd "$out/refused" && touch CMakeLists.txt && echo "# x" >>CMakeLists.txt && ! ./bootstrap.sh abc >/dev/null 2>&1) ||
+(cd "$out/refused" && touch notes.txt && ! ./bootstrap.sh abc >/dev/null 2>&1) ||
+	fail "bootstrap ran with an untracked file"
+(cd "$out/refused" && rm notes.txt && echo "# x" >>CMakeLists.txt && ! ./bootstrap.sh abc >/dev/null 2>&1) ||
 	fail "bootstrap ran over uncommitted changes"
 
 # what both kinds leave
@@ -94,9 +97,15 @@ key refs/tags/v1.0.0 && fail "key check: the test key passed a tag build"
 cp "$d/license-key.pem" "$out/test-key.pem"
 perl -pe 's/\n/\r\n/' "$out/test-key.pem" >"$d/license-key.pem"
 key refs/tags/v1.0.0 && fail "key check: a CRLF copy of the test key passed a tag build"
-openssl pkey -in "$d/extension-ci-tools/kista/sdk/cpp/test/vectors/test-only-2048.pem" -pubout 2>/dev/null |
-	openssl pkey -pubin -outform DER 2>/dev/null | openssl pkey -pubin -inform DER >"$d/license-key.pem" 2>/dev/null
-key refs/tags/v1.0.0 && fail "key check: the test key, written again, passed a tag build"
+python3 -c 'import sys
+lines = open(sys.argv[1]).read().split()
+body = "".join(lines[3:-3])
+print("-----BEGIN PUBLIC KEY-----")
+for i in range(0, len(body), 76):
+    print(body[i:i + 76])
+print("-----END PUBLIC KEY-----")' "$out/test-key.pem" >"$d/license-key.pem"
+[ "$(head -2 "$d/license-key.pem" | tail -1 | wc -c | tr -d ' ')" = 77 ] || fail "key check: the re-wrapped key is not 76 columns"
+key refs/tags/v1.0.0 && fail "key check: the test key wrapped at 76 columns passed a tag build"
 cp "$d/extension-ci-tools/kista/sdk/cpp/test/keys/test-only-untrusted-2048.pub.pem" "$d/license-key.pem"
 key refs/tags/v1.0.0 && fail "key check: the SDK's other test key passed a tag build"
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | openssl pkey -pubout >"$d/license-key.pem"

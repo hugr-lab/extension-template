@@ -2,9 +2,9 @@
 # it, and on a v* tag publishes the builds to a kista channel (hugr-lab/extension-ci-tools'
 # _kista_publish.yml) when the repository's KISTA_URL variable is set.
 #
-# DuckDB is the duckdb submodule's commit. When you move it (docs/UPDATING.md), move the
-# extension-ci-tools submodule and the two duckdb/extension-ci-tools refs below to the branch of the
-# same DuckDB line.
+# DuckDB is the duckdb submodule's commit. When you move it, move the extension-ci-tools submodule
+# and every duckdb/extension-ci-tools @<commit> and ci_tools_version below to one commit of the
+# branch of the same DuckDB line (docs/UPDATING.md).
 name: Distribution
 on:
   push:

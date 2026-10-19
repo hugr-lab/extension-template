@@ -31,4 +31,4 @@ missing
 statement error
 SELECT waddle_pro('Sam');
 ----
-waddle
+Permission Error: no licence for waddle

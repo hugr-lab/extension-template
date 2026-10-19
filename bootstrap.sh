@@ -10,7 +10,7 @@
 # sources as DuckDB's format check wants them, and removes itself. Everything it changes is staged,
 # for a look before the first commit. See README.md and kista's spec 0022
 # (hugr-lab/duckdb-extension-repository).
-set -euo pipefail
+set -Eeuo pipefail
 
 usage() {
 	echo "usage: ./bootstrap.sh <name> [--licensed] [--no-format]" >&2
@@ -37,14 +37,32 @@ if ! [[ "$name" =~ ^[a-z][a-z0-9_]{0,63}$ ]]; then
 fi
 
 cd "$(dirname "$0")"
-if [ ! -d kinds/open ] || [ ! -d kinds/licensed ] || ! git rev-parse --git-dir >/dev/null 2>&1; then
-	echo "bootstrap: run it once, in a git copy of the template (kinds/ is gone after a bootstrap)" >&2
+if [ ! -d kinds/open ] || [ ! -d kinds/licensed ] || [ "$(git rev-parse --show-toplevel 2>/dev/null)" != "$(pwd -P)" ]; then
+	echo "bootstrap: run it once, at the top of a git copy of the template (kinds/ is gone after a bootstrap)" >&2
 	exit 2
 fi
-if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-	echo "bootstrap: commit or stash your changes first" >&2
+# untracked files too: bootstrap stages everything it leaves, and would stage them with it
+if [ -n "$(git status --porcelain)" ]; then
+	echo "bootstrap: commit, stash or remove your changes and untracked files first" >&2
 	exit 2
 fi
+
+if [ "$kind" = licensed ]; then
+	# the fork's commit the licensed workflow pins (one pin for it and the submodule), fetched before
+	# anything changes, so that a failure here leaves the copy as it was
+	pin=$(sed -n 's|.*hugr-lab/extension-ci-tools/\.github/workflows/_extension_distribution\.yml@\([0-9a-f]\{40\}\).*|\1|p' \
+		kinds/licensed/.github/workflows/distribution.yml | head -1)
+	if [ -z "$pin" ]; then
+		echo "bootstrap: no hugr-lab/extension-ci-tools commit in kinds/licensed/.github/workflows/distribution.yml" >&2
+		exit 1
+	fi
+	if [ -e extension-ci-tools/.git ]; then
+		git -C extension-ci-tools fetch -q https://github.com/hugr-lab/extension-ci-tools "$pin"
+	fi
+fi
+
+# from here on, a failure leaves a half-made copy: say how to start again
+trap 'echo "bootstrap: failed; to start again: git reset -q --hard && git clean -qfd && git submodule sync -q" >&2' ERR
 
 # Waddle in names of types (my_ext: MyExt), WADDLE in macros
 camel=$(printf '%s' "$name" | awk -F_ '{for (i = 1; i <= NF; i++) printf "%s%s", toupper(substr($i, 1, 1)), substr($i, 2)}')
@@ -77,18 +95,12 @@ git ls-files | grep waddle | while IFS= read -r f; do
 done
 
 if [ "$kind" = licensed ]; then
-	# the fork as extension-ci-tools, at the commit the workflow pins (one pin for both)
-	pin=$(sed -n 's|.*hugr-lab/extension-ci-tools/\.github/workflows/_extension_distribution\.yml@\([0-9a-f]\{40\}\).*|\1|p' .github/workflows/distribution.yml | head -1)
-	if [ -z "$pin" ]; then
-		echo "bootstrap: no hugr-lab/extension-ci-tools commit in .github/workflows/distribution.yml" >&2
-		exit 1
-	fi
+	# the fork as extension-ci-tools, at the pin
 	git config -f .gitmodules submodule.extension-ci-tools.url https://github.com/hugr-lab/extension-ci-tools
 	git config -f .gitmodules submodule.extension-ci-tools.branch main
 	git update-index --cacheinfo "160000,$pin,extension-ci-tools"
 	git submodule sync -q extension-ci-tools
 	if [ -e extension-ci-tools/.git ]; then
-		git -C extension-ci-tools fetch -q origin "$pin"
 		git -C extension-ci-tools checkout -q "$pin"
 	fi
 fi
@@ -101,8 +113,10 @@ if [ "$format" = yes ] && [ -f duckdb/scripts/format.py ]; then
 		venv=$(mktemp -d)
 		trap 'rm -rf "$venv"' EXIT
 		echo "bootstrap: installing DuckDB's formatters into $venv (--no-format skips this)"
-		if python3 -m venv "$venv" && "$venv/bin/pip" install -q --disable-pip-version-check \
-			'clang_format==11.0.1' cmake-format 'black==24.*' >/dev/null; then
+		# wheels only: clang_format 11 has none for some platforms (Linux arm64), and its source
+		# build is LLVM's
+		if python3 -m venv "$venv" && "$venv/bin/pip" install -q --disable-pip-version-check --only-binary=:all: \
+			'clang_format==11.0.1' cmake-format 'black==24.*' >/dev/null 2>&1; then
 			PATH="$venv/bin:$PATH"
 		fi
 	fi

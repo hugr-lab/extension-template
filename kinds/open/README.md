@@ -50,8 +50,13 @@ With OIDC, a kista administrator binds this workflow to a publisher (ids from
 
 ```text
 kista admin publisher github add <tenant> <publisher> -owner-id <id> -repository-id <id> \
-  -workflow <owner>/<repo>/.github/workflows/distribution.yml -ref 'refs/tags/v*'
+  -workflow <owner>/<repo>/.github/workflows/distribution.yml -ref 'refs/tags/v*' \
+  [-environment <env>]   # with KISTA_ENVIRONMENT set to the same
 ```
+
+Anyone who may push a `v*` tag, on any commit, publishes. To require more, set `KISTA_ENVIRONMENT` to
+a GitHub environment with protection rules (required reviewers, the tags it allows), and bind the
+publisher with the same `-environment`; protect `v*` tags with a ruleset.
 
 kista checks each build and signs it with the channel's key: no signing key is needed in CI. wasm
 builds are skipped until kista takes them. See kista's
@@ -63,18 +68,26 @@ builds this repository the same way.
 
 ## Installing from kista
 
+DuckDB reads the channel's keys from its `.well-known` file through httpfs. A private release (the
+default, `KISTA_VISIBILITY`) also needs a token that may install it, in an http secret scoped to the
+channel; a public one does not:
+
 ```sql
 SET allow_extension_repositories = 'allowed';
+LOAD httpfs;
+CREATE SECRET acme_token (TYPE http, BEARER_TOKEN '<token>',
+  SCOPE 'https://kista.example.org/<tenant>/<channel>/');   -- private releases only
 CREATE EXTENSION REPOSITORY acme WITH PREFIX 'https://kista.example.org/<tenant>/<channel>';
 INSTALL waddle FROM acme;
 LOAD waddle FROM acme;
 ```
 
+See kista's [Using kista from DuckDB](https://hugr-lab.github.io/duckdb-extension-repository/duckdb/)
+page, including how to get httpfs from kista itself.
+
 ## Updating DuckDB
 
-DuckDB is the `duckdb` submodule's commit. To move it, follow [docs/UPDATING.md](docs/UPDATING.md):
-move the `extension-ci-tools` submodule and the `duckdb/extension-ci-tools` refs in
-`distribution.yml` to the branch of the same DuckDB line.
+DuckDB is the `duckdb` submodule's commit; see [docs/UPDATING.md](docs/UPDATING.md).
 
 ## Specs
 

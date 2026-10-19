@@ -37,9 +37,10 @@ binding) and, for a licensed one, how to set its licence key before the first re
 ## This repository
 
 - `kinds/open/` and `kinds/licensed/`: each kind's files, put over the root by `bootstrap.sh`.
-- `.github/workflows/template.yml`: the template's own CI. It bootstraps both kinds, builds them on
-  Linux, publishes them to a kista built from a pinned commit, then installs and loads them from it
-  with DuckDB; and checks that a tag build of a licensed copy with the test key fails.
+- `.github/workflows/template.yml`: the template's own CI. It runs the bootstrap's checks (with the
+  licence-key check on the SDK's test keys), bootstraps both kinds, builds and tests them on Linux,
+  publishes them to a kista built from a pinned commit as the publication job does, then installs
+  and loads them from it with DuckDB.
 - `scripts/test-bootstrap.sh`: the bootstrap's own checks (no build); `scripts/test-kista.sh`: the
   publish, install and load check on two built copies, which `template.yml` runs.
 - The rest is DuckDB's template, merged from it when we take a change. The branches follow

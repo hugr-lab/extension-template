@@ -4,6 +4,7 @@
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 // OpenSSL linked through vcpkg
@@ -29,16 +30,37 @@ inline void WaddleOpenSSLVersionScalarFun(DataChunk &args, ExpressionState &stat
 	});
 }
 
-// waddle_pro needs a licence: Check() throws unless it is valid or in grace. What a plan allows
-// comes from its limits, with a default for no licence; and the extension reports its use to the
-// repository it was installed from when it decides to (kista::Usage::Send, SendAsync).
-inline void WaddleProScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
-	auto lic = kista::License::Get(state.GetContext(), "waddle");
+// waddle_pro needs a licence. The licence is read when a query binds the function, never per chunk:
+// Check() throws unless it is valid or in grace, and Limit() reads what the plan allows, with a
+// default for no licence. The extension also reports its use to the repository it was installed
+// from when it decides to (kista::Usage::Send, SendAsync).
+struct WaddleProData : public FunctionData {
+	explicit WaddleProData(int64_t ducks) : ducks(ducks) {
+	}
+	int64_t ducks;
+
+	unique_ptr<FunctionData> Copy() const override {
+		return make_uniq<WaddleProData>(ducks);
+	}
+	bool Equals(const FunctionData &other) const override {
+		return ducks == other.Cast<WaddleProData>().ducks;
+	}
+};
+
+static unique_ptr<FunctionData> WaddleProBind(BindScalarFunctionInput &input) {
+	auto lic = kista::License::Get(input.GetClientContext(), "waddle");
 	lic.Check();
-	auto ducks = lic.Limit<int64_t>("ducks", 1);
+	// a licence's limit is the issuer's to set: keep it within what the function can do
+	auto ducks = std::min<int64_t>(std::max<int64_t>(lic.Limit<int64_t>("ducks", 1), 1), 16);
+	return make_uniq<WaddleProData>(ducks);
+}
+
+inline void WaddleProScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
+	auto &data = state.expr.Cast<BoundFunctionExpression>().BindInfo()->Cast<WaddleProData>();
+	auto ducks = string(NumericCast<size_t>(data.ducks), '.');
 	auto &name_vector = args.data[0];
 	UnaryExecutor::Execute<string_t, string_t>(name_vector, result, args.size(), [&](string_t name) {
-		return StringVector::AddString(result, string(ducks, '.') + "🦆 " + name.GetString());
+		return StringVector::AddString(result, ducks + "🦆 " + name.GetString());
 	});
 }
 
@@ -60,7 +82,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 
 	// A function that needs a licence
 	loader.RegisterFunction(
-	    ScalarFunction("waddle_pro", {LogicalType::VARCHAR}, LogicalType::VARCHAR, WaddleProScalarFun));
+	    ScalarFunction("waddle_pro", {LogicalType::VARCHAR}, LogicalType::VARCHAR, WaddleProScalarFun, WaddleProBind));
 }
 
 void WaddleExtension::Load(ExtensionLoader &loader) {

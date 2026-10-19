@@ -85,9 +85,18 @@ for _ in $(seq 1 60); do
 done
 curl -sf "http://127.0.0.1:$port/readyz" >/dev/null || { cat "$work/serve.log" >&2; exit 1; }
 
-# publish both with the kit's script, as _kista_publish.yml runs it
-SSL_CERT_FILE=$work/ca.pem KISTA_API_KEY=$api_key python3 "$lic/extension-ci-tools/scripts/kista_publish.py" \
-	--url "https://127.0.0.1:$port" --tenant acme --channel prod --visibility public "$open_ext" "$lic_ext"
+# publish both as _kista_publish.yml does: from the artifacts' directories, one name at a time
+for ext in "$open_ext" "$lic_ext"; do
+	name=$(basename "$ext" .duckdb_extension)
+	platform=$("$kista" ext inspect "$ext" | awk '$1 == "platform:" {print $2}')
+	mkdir -p "$work/artifacts/$name-$duckdb_version-extension-$platform"
+	cp "$ext" "$work/artifacts/$name-$duckdb_version-extension-$platform/"
+	SSL_CERT_FILE=$work/ca.pem KISTA_API_KEY=$api_key python3 "$lic/extension-ci-tools/scripts/kista_publish.py" \
+		--url "https://127.0.0.1:$port" --tenant acme --channel prod --visibility public --name "$name" \
+		--postfix="" --summary "$work/summary.md" "$work/artifacts"
+done
+grep -q "$open_name" "$work/summary.md" && grep -q "$lic_name" "$work/summary.md" ||
+	{ echo "test-kista: the job summary does not list both" >&2; exit 1; }
 
 # install and load both from kista with DuckDB at the copies' commit (built, not linked into it)
 sql() { HOME=$work/home "$open/build/release/duckdb" -noheader -list -c "SET autoinstall_known_extensions = false;

@@ -69,12 +69,17 @@ With OIDC, a kista administrator binds this workflow to a publisher (ids from
 
 ```text
 kista admin publisher github add <tenant> <publisher> -owner-id <id> -repository-id <id> \
-  -workflow <owner>/<repo>/.github/workflows/distribution.yml -ref 'refs/tags/v*'
+  -workflow <owner>/<repo>/.github/workflows/distribution.yml -ref 'refs/tags/v*' \
+  [-environment <env>]   # with KISTA_ENVIRONMENT set to the same
 ```
 
 For kista to record the build's licence keys (kista spec 0021), a server administrator also marks
 the publisher: `kista admin publisher license-keys <tenant> <publisher> on`. With Enterest, Enterest
 builds and publishes instead.
+
+Anyone who may push a `v*` tag, on any commit, publishes. To require more, set `KISTA_ENVIRONMENT` to
+a GitHub environment with protection rules (required reviewers, the tags it allows), and bind the
+publisher with the same `-environment`; protect `v*` tags with a ruleset.
 
 kista checks each build and signs it with the channel's key: no signing key is needed in CI. wasm
 builds are skipped until kista takes them. See kista's
@@ -83,20 +88,28 @@ builds are skipped until kista takes them. See kista's
 
 ## Installing from kista
 
+DuckDB reads the channel's keys from its `.well-known` file through httpfs. A private release (the
+default, `KISTA_VISIBILITY`) also needs a token that may install it, in an http secret scoped to the
+channel; a public one does not:
+
 ```sql
 SET allow_extension_repositories = 'allowed';
+LOAD httpfs;
+CREATE SECRET acme_token (TYPE http, BEARER_TOKEN '<token>',
+  SCOPE 'https://kista.example.org/<tenant>/<channel>/');   -- private releases only
 CREATE EXTENSION REPOSITORY acme WITH PREFIX 'https://kista.example.org/<tenant>/<channel>';
 INSTALL waddle FROM acme;
 LOAD waddle FROM acme;
 SELECT status, plan, expires_at FROM waddle_license();
 ```
 
+See kista's [Using kista from DuckDB](https://hugr-lab.github.io/duckdb-extension-repository/duckdb/)
+page, including how to get httpfs from kista itself.
+
 ## Updating
 
-- **The kit.** hugr-lab/extension-ci-tools' commit is the `extension-ci-tools` submodule's and is
-  pinned three times in `distribution.yml`: move them together, to a commit of the fork's `main`.
-- **DuckDB** is the `duckdb` submodule's commit; see [docs/UPDATING.md](docs/UPDATING.md). The SDK is
-  tested against the DuckDB in the fork's `kista/DUCKDB_PIN`.
+DuckDB is the `duckdb` submodule's commit, and the kit is hugr-lab/extension-ci-tools' commit in
+the `extension-ci-tools` submodule and in `distribution.yml`; see [docs/UPDATING.md](docs/UPDATING.md).
 
 ## Licence
 
