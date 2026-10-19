@@ -65,11 +65,17 @@ jobs:
           for kind in open licensed; do
             dir=$RUNNER_TEMP/$kind
             git clone -q "$GITHUB_WORKSPACE" "$dir"
-            flag=""; [ "$kind" = licensed ] && flag=--licensed
-            (cd "$dir" && ./bootstrap.sh "tmpl_$kind" $flag)
+            # the submodules first, as after a clone with --recurse-submodules: bootstrap formats with
+            # DuckDB's script through the Makefile
             git -C "$dir" submodule update --init --reference "$GITHUB_WORKSPACE/duckdb" duckdb
             git -C "$dir" submodule update --init extension-ci-tools
+            flag=""; [ "$kind" = licensed ] && flag=--licensed
+            (cd "$dir" && ./bootstrap.sh "tmpl_$kind" $flag)
           done
+      - name: the copies pass DuckDB's format check
+        run: |
+          pip3 install -q --break-system-packages 'clang_format==11.0.1' cmake-format 'black==24.*'
+          for kind in open licensed; do make -C "$RUNNER_TEMP/$kind" format-check; done
       - name: build the open copy
         working-directory: ${{ runner.temp }}/open
         run: make release && make test

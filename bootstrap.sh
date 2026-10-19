@@ -3,23 +3,27 @@
 #
 #   ./bootstrap.sh <name>              an open extension (MIT, Apache, the community's build)
 #   ./bootstrap.sh <name> --licensed   a licensed one (the kista SDK, hugr-lab/extension-ci-tools)
+#   --no-format                        leave the formatting (make format-fix) to you
 #
 # It renames the example extension (waddle) to <name> in the sources, tests, CMake and workflows,
-# puts the kind's files in place, removes the other kind's and the template's own, and removes
-# itself. Everything it changes is staged, for a look before the first commit. See README.md and
-# kista's spec 0022 (hugr-lab/duckdb-extension-repository).
+# puts the kind's files in place, removes the other kind's and the template's own, formats the
+# sources as DuckDB's format check wants them, and removes itself. Everything it changes is staged,
+# for a look before the first commit. See README.md and kista's spec 0022
+# (hugr-lab/duckdb-extension-repository).
 set -euo pipefail
 
 usage() {
-	echo "usage: ./bootstrap.sh <name> [--licensed]" >&2
+	echo "usage: ./bootstrap.sh <name> [--licensed] [--no-format]" >&2
 	exit 2
 }
 
 name=""
 kind=open
+format=yes
 for arg in "$@"; do
 	case "$arg" in
 	--licensed) kind=licensed ;;
+	--no-format) format=no ;;
 	-*) usage ;;
 	*) [ -z "$name" ] || usage; name=$arg ;;
 	esac
@@ -89,8 +93,30 @@ if [ "$kind" = licensed ]; then
 	fi
 fi
 
+# The renamed lines are longer or shorter: format as the distribution's format check does (DuckDB's
+# scripts/format.py, with the tool versions of extension-ci-tools' _extension_code_quality.yml).
+formatted=no
+if [ "$format" = yes ] && [ -f duckdb/scripts/format.py ]; then
+	if ! { clang-format --version 2>/dev/null | grep -q 'version 11\.' && command -v cmake-format >/dev/null && command -v black >/dev/null; }; then
+		venv=$(mktemp -d)
+		trap 'rm -rf "$venv"' EXIT
+		echo "bootstrap: installing DuckDB's formatters into $venv (--no-format skips this)"
+		if python3 -m venv "$venv" && "$venv/bin/pip" install -q --disable-pip-version-check \
+			'clang_format==11.0.1' cmake-format 'black==24.*' >/dev/null; then
+			PATH="$venv/bin:$PATH"
+		fi
+	fi
+	if make format-fix >/dev/null 2>&1; then
+		formatted=yes
+	fi
+fi
+
 git rm -q bootstrap.sh
 git add -A
 
-echo "bootstrap: $name, a $kind extension. The changes are staged: review them, then commit."
+echo "bootstrap: $name, an extension of the $kind kind. The changes are staged: review them, then commit."
+if [ "$formatted" = no ]; then
+	echo "Not formatted: run make format-fix (clang-format 11, cmake-format, black) before the first push,"
+	echo "or DuckDB's format check fails on the renamed lines."
+fi
 echo "Then: git submodule update --init --recursive && make && make test"
