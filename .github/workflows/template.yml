@@ -1,6 +1,6 @@
 # The template's own CI (removed by bootstrap.sh): bootstrap both kinds, build them on Linux, publish
-# them to a kista built from KISTA_COMMIT, and install and load them from it with DuckDB at the
-# duckdb submodule's commit. kista's spec 0022 (hugr-lab/duckdb-extension-repository), Testing.
+# them to a kista built from TEMPLATE_KISTA_COMMIT, and install and load them from it with DuckDB at
+# the duckdb submodule's commit. kista's spec 0022 (hugr-lab/duckdb-extension-repository), Testing.
 name: Template
 on:
   push:
@@ -17,7 +17,8 @@ concurrency:
 
 env:
   # the kista the copies are published to: a commit of hugr-lab/duckdb-extension-repository's main
-  KISTA_COMMIT: cd514053f5be630a6a3957dc1d4b37f603ae6bae
+  # (not KISTA_*: kista refuses an environment variable of its prefix that is not a setting)
+  TEMPLATE_KISTA_COMMIT: cd514053f5be630a6a3957dc1d4b37f603ae6bae
 
 jobs:
   bootstrap:
@@ -91,7 +92,7 @@ jobs:
         run: |
           git init -q "$RUNNER_TEMP/kista"
           git -C "$RUNNER_TEMP/kista" remote add origin https://github.com/hugr-lab/duckdb-extension-repository
-          git -C "$RUNNER_TEMP/kista" fetch -q --depth 1 origin "$KISTA_COMMIT"
+          git -C "$RUNNER_TEMP/kista" fetch -q --depth 1 origin "$TEMPLATE_KISTA_COMMIT"
           git -C "$RUNNER_TEMP/kista" checkout -q FETCH_HEAD
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

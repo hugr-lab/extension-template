@@ -20,7 +20,10 @@ open_name=$3
 lic=$(cd "$4" && pwd)
 lic_name=$5
 work=$6
-port=${KISTA_TEST_PORT:-18443}
+port=${TEMPLATE_KISTA_PORT:-18443}
+
+# kista refuses a KISTA_* variable that is not one of its settings; this kista takes all from its file
+while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep '^KISTA_' || true)
 
 rm -rf "${work:?}"
 mkdir -p "$work/keys" "$work/home"
@@ -55,6 +58,7 @@ serve:
         key_file: $work/tls.key
 EOF
 ka() { "$kista" admin -config "$work/kista.yaml" "$@" 2>>"$work/admin.log"; }
+trap 'echo "test-kista: failed; kista said:" >&2; tail -20 "$work/admin.log" "$work/serve.log" >&2 2>/dev/null' ERR
 
 open_ext=$open/build/release/extension/$open_name/$open_name.duckdb_extension
 lic_ext=$lic/build/release/extension/$lic_name/$lic_name.duckdb_extension
