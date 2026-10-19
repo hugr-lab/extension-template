@@ -1,0 +1,103 @@
+# The template's own CI (removed by bootstrap.sh): bootstrap both kinds, build them on Linux, publish
+# them to a kista built from KISTA_COMMIT, and install and load them from it with DuckDB at the
+# duckdb submodule's commit. kista's spec 0022 (hugr-lab/duckdb-extension-repository), Testing.
+name: Template
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: template-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # the kista the copies are published to: a commit of hugr-lab/duckdb-extension-repository's main
+  KISTA_COMMIT: cd514053f5be630a6a3957dc1d4b37f603ae6bae
+
+jobs:
+  bootstrap:
+    name: Bootstrap
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: scripts/test-bootstrap.sh "$RUNNER_TEMP/bootstrap"
+
+  kista:
+    name: Build, publish to kista, install
+    needs: bootstrap
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      GEN: ninja
+      CCACHE_MAXSIZE: 2G
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build ccache libssl-dev
+      - name: DuckDB
+        run: git submodule update --init --filter=blob:none duckdb
+      - name: cache key
+        id: key
+        run: |
+          # the two copies share DuckDB's objects: paths relative to RUNNER_TEMP
+          echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "ccache=ccache-template-${{ runner.os }}-${{ runner.arch }}-$(git rev-parse HEAD:duckdb)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ${{ steps.key.outputs.ccache }}-${{ github.sha }}
+          restore-keys: ${{ steps.key.outputs.ccache }}-
+      - name: bootstrap an open and a licensed copy
+        run: |
+          for kind in open licensed; do
+            dir=$RUNNER_TEMP/$kind
+            git clone -q "$GITHUB_WORKSPACE" "$dir"
+            flag=""; [ "$kind" = licensed ] && flag=--licensed
+            (cd "$dir" && ./bootstrap.sh "tmpl_$kind" $flag)
+            git -C "$dir" submodule update --init --reference "$GITHUB_WORKSPACE/duckdb" duckdb
+            git -C "$dir" submodule update --init extension-ci-tools
+          done
+      - name: build the open copy
+        working-directory: ${{ runner.temp }}/open
+        run: make release && make test
+      - name: build the licensed copy
+        working-directory: ${{ runner.temp }}/licensed
+        run: make release && make test
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ${{ steps.key.outputs.ccache }}-${{ github.sha }}
+      - name: kista
+        run: |
+          git init -q "$RUNNER_TEMP/kista"
+          git -C "$RUNNER_TEMP/kista" remote add origin https://github.com/hugr-lab/duckdb-extension-repository
+          git -C "$RUNNER_TEMP/kista" fetch -q --depth 1 origin "$KISTA_COMMIT"
+          git -C "$RUNNER_TEMP/kista" checkout -q FETCH_HEAD
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ runner.temp }}/kista/go.mod
+          cache: false
+      - name: build kista
+        working-directory: ${{ runner.temp }}/kista
+        run: GOWORK=off go build -o "$RUNNER_TEMP/kista-bin" ./cmd/kista
+      - name: publish both to kista, install and load them
+        run: |
+          scripts/test-kista.sh "$RUNNER_TEMP/kista-bin" "$RUNNER_TEMP/open" tmpl_open \
+            "$RUNNER_TEMP/licensed" tmpl_licensed "$RUNNER_TEMP/kista-run"
+      - name: kista's log
+        if: failure()
+        run: cat "$RUNNER_TEMP/kista-run/serve.log" "$RUNNER_TEMP/kista-run/admin.log" || true
