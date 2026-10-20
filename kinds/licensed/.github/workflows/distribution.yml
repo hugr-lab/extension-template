@@ -35,39 +35,36 @@ jobs:
   build:
     name: Build extension binaries
     needs: license-key
-    uses: hugr-lab/extension-ci-tools/.github/workflows/_extension_distribution.yml@3c1912caa5a714e2a75d8a0c0b919f079576bea7 # kista sdk-v0.1.0
+    uses: hugr-lab/extension-ci-tools/.github/workflows/_extension_distribution.yml@d5dfb68cf0c0b24fc49327c018a6947bb6f90573 # kista sdk-v0.2.0
     with:
-      ci_tools_version: 3c1912caa5a714e2a75d8a0c0b919f079576bea7
+      ci_tools_version: d5dfb68cf0c0b24fc49327c018a6947bb6f90573
       # the fork's ci-tools, not DuckDB's: the SDK is there
       override_ci_tools_repository: hugr-lab/extension-ci-tools
       extension_name: waddle
 
   code-quality-check:
     name: Code Quality Check
-    uses: hugr-lab/extension-ci-tools/.github/workflows/_extension_code_quality.yml@3c1912caa5a714e2a75d8a0c0b919f079576bea7 # kista sdk-v0.1.0
+    uses: hugr-lab/extension-ci-tools/.github/workflows/_extension_code_quality.yml@d5dfb68cf0c0b24fc49327c018a6947bb6f90573 # kista sdk-v0.2.0
     with:
-      ci_tools_version: 3c1912caa5a714e2a75d8a0c0b919f079576bea7
+      ci_tools_version: d5dfb68cf0c0b24fc49327c018a6947bb6f90573
       override_ci_tools_repository: hugr-lab/extension-ci-tools
       extension_name: waddle
       format_checks: 'format;tidy'
 
-  # Each build goes to kista as it is: kista checks it and signs it with the channel's key. Without
-  # KISTA_API_KEY, GitHub's OIDC token: bind this workflow to a publisher in kista (README.md).
+  # Each build goes to kista as it is: kista checks it and signs it with the channel's key. Each
+  # request is signed with the publisher's SSH key, the KISTA_PUBLISHER_KEY secret (README.md).
   kista:
     name: Publish to kista
     needs: build
     if: startsWith(github.ref, 'refs/tags/v') && vars.KISTA_URL != ''
-    permissions:
-      contents: read
-      id-token: write
-    uses: hugr-lab/extension-ci-tools/.github/workflows/_kista_publish.yml@3c1912caa5a714e2a75d8a0c0b919f079576bea7 # kista sdk-v0.1.0
+    uses: hugr-lab/extension-ci-tools/.github/workflows/_kista_publish.yml@d5dfb68cf0c0b24fc49327c018a6947bb6f90573 # kista sdk-v0.2.0
     with:
       extension_name: waddle
-      ci_tools_version: 3c1912caa5a714e2a75d8a0c0b919f079576bea7
+      ci_tools_version: d5dfb68cf0c0b24fc49327c018a6947bb6f90573
       kista_url: ${{ vars.KISTA_URL }}
       tenant: ${{ vars.KISTA_TENANT }}
       channel: ${{ vars.KISTA_CHANNEL }}
       visibility: ${{ vars.KISTA_VISIBILITY || 'private' }}
       environment: ${{ vars.KISTA_ENVIRONMENT || '' }}
     secrets:
-      KISTA_API_KEY: ${{ secrets.KISTA_API_KEY }}
+      KISTA_PUBLISHER_KEY: ${{ secrets.KISTA_PUBLISHER_KEY }}

@@ -9,7 +9,8 @@ another DuckDB:
    in `extension-ci-tools`; set each submodule's `branch` in `.gitmodules` to that line.
 2. In `.github/workflows/distribution.yml`, set every `duckdb/extension-ci-tools/...@<commit>` and
    its `ci_tools_version:` to the new `extension-ci-tools` commit. The `_kista_publish.yml` pin is
-   hugr-lab/extension-ci-tools' and does not depend on DuckDB's version.
+   hugr-lab/extension-ci-tools' and does not depend on DuckDB's version; when you move it, move the
+   commit in README.md's `kista_publish.py` download with it.
 3. `make`, `make test` and `make format-check`: fix what the new DuckDB changed (below).
 
 A kista channel serves the DuckDB versions its administrator added: a new DuckDB version needs to be

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The template's end-to-end check: publishes a built open and a built licensed copy to a kista with
-# hugr-lab/extension-ci-tools' kista_publish.py and an API key, then installs and loads both from it
-# with the DuckDB the copies were built with. Removed by bootstrap.sh.
+# hugr-lab/extension-ci-tools' kista_publish.py, signed with a publisher key (kista spec 0023), then
+# installs and loads both from it with the DuckDB the copies were built with. Removed by bootstrap.sh.
 #
 #   scripts/test-kista.sh <kista binary> <open copy> <open name> <licensed copy> <licensed name> <work dir>
 #
@@ -73,7 +73,10 @@ ka version add "$duckdb_version" -kind "$version_kind" >/dev/null
 ka channel versions acme/prod -add "$duckdb_version" >/dev/null
 ka publisher add acme ci >/dev/null
 ka grant add acme -principal publisher:ci -verb publish -channel prod >/dev/null
-api_key=$(ka publisher key add acme ci -expires 1d | tail -1)
+# the publisher's key, as a developer makes it; the script takes the file's path
+mkdir -m 700 "$work/publisher"
+ssh-keygen -q -t ed25519 -N '' -C ci -f "$work/publisher/key"
+ka publisher key add acme ci "$work/publisher/key.pub" -expires 1d >/dev/null
 public_key=$(ka wellknown acme/prod | python3 -c 'import json, sys; print(json.load(sys.stdin)["signature_keys"][0], end="")')
 
 "$kista" serve -config "$work/kista.yaml" >"$work/serve.log" 2>&1 &
@@ -85,13 +88,18 @@ for _ in $(seq 1 60); do
 done
 curl -sf "http://127.0.0.1:$port/readyz" >/dev/null || { cat "$work/serve.log" >&2; exit 1; }
 
+# the key and its grants, as _kista_publish.yml checks them first
+who=$(SSL_CERT_FILE=$work/ca.pem KISTA_PUBLISHER_KEY=$work/publisher/key python3 "$lic/extension-ci-tools/scripts/kista_publish.py" \
+	--url "https://127.0.0.1:$port" --tenant acme --channel prod --check)
+[[ $who == *'"publisher":"ci"'* ]] || { echo "test-kista: the key's check did not name the publisher: $who" >&2; exit 1; }
+
 # publish both as _kista_publish.yml does: from the artifacts' directories, one name at a time
 for ext in "$open_ext" "$lic_ext"; do
 	name=$(basename "$ext" .duckdb_extension)
 	platform=$("$kista" ext inspect "$ext" | awk '$1 == "platform:" {print $2}')
 	mkdir -p "$work/artifacts/$name-$duckdb_version-extension-$platform"
 	cp "$ext" "$work/artifacts/$name-$duckdb_version-extension-$platform/"
-	SSL_CERT_FILE=$work/ca.pem KISTA_API_KEY=$api_key python3 "$lic/extension-ci-tools/scripts/kista_publish.py" \
+	SSL_CERT_FILE=$work/ca.pem KISTA_PUBLISHER_KEY=$work/publisher/key python3 "$lic/extension-ci-tools/scripts/kista_publish.py" \
 		--url "https://127.0.0.1:$port" --tenant acme --channel prod --visibility public --name "$name" \
 		--postfix="" --summary "$work/summary.md" "$work/artifacts"
 done
