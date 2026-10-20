@@ -42,21 +42,30 @@ request. On a `v*` tag it also publishes the builds to a kista channel, when the
 | `KISTA_URL` | variable | the kista's public URL, e.g. `https://kista.example.org` |
 | `KISTA_TENANT`, `KISTA_CHANNEL` | variables | where the builds go |
 | `KISTA_VISIBILITY` | variable | `private` (the default) or `public` |
-| `KISTA_ENVIRONMENT` | variable | the GitHub environment of the publish job, when the binding below names one |
-| `KISTA_API_KEY` | secret | a publisher's API key; without it, GitHub's OIDC token |
+| `KISTA_ENVIRONMENT` | variable | the GitHub environment of the publish job, whose secret holds the key |
+| `KISTA_PUBLISHER_KEY` | secret | the publisher's private SSH key: each request is signed with it |
 
-With OIDC, a kista administrator binds this workflow to a publisher (ids from
-`gh api repos/<owner>/<repo> --jq '.owner.id, .id'`):
+**The publisher key** (kista spec 0023). The publisher signs each request with an SSH key, as you
+sign in to GitHub with one; kista holds only the public half. Once:
 
-```text
-kista admin publisher github add <tenant> <publisher> -owner-id <id> -repository-id <id> \
-  -workflow <owner>/<repo>/.github/workflows/distribution.yml -ref 'refs/tags/v*' \
-  [-environment <env>]   # with KISTA_ENVIRONMENT set to the same
+```sh
+ssh-keygen -t ed25519 -N '' -C waddle-ci -f publisher_key
+# kista's administrator registers the public half on the publisher:
+#   kista admin publisher key add <tenant> <publisher> publisher_key.pub -expires 365d
+# then check the key and its grants: kista answers with the publisher and what it may publish
+# (kista_publish.py: hugr-lab/extension-ci-tools' scripts/kista_publish.py, at the commit
+# distribution.yml pins; it needs only Python 3 and OpenSSH)
+KISTA_PUBLISHER_KEY=publisher_key python3 kista_publish.py --url <kista URL> --tenant <tenant> --check
+# keep it as the secret of an environment, then delete the file
+gh api -X PUT repos/<owner>/<repo>/environments/release
+gh variable set KISTA_ENVIRONMENT --body release
+gh secret set KISTA_PUBLISHER_KEY --env release < publisher_key
+rm publisher_key
 ```
 
-Anyone who may push a `v*` tag, on any commit, publishes. To require more, set `KISTA_ENVIRONMENT` to
-a GitHub environment with protection rules (required reviewers, the tags it allows), and bind the
-publisher with the same `-environment`; protect `v*` tags with a ruleset.
+Anyone who may push a `v*` tag, on any commit, publishes. Give the `release` environment protection
+rules (required reviewers, the tags it allows), and protect `v*` tags with a ruleset. To replace the
+key, register the new one, replace the secret, then remove the old one in kista.
 
 kista checks each build and signs it with the channel's key: no signing key is needed in CI. wasm
 builds are skipped until kista takes them. See kista's
