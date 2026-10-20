@@ -68,25 +68,39 @@ repository's variables and secrets, never in the code:
 sign in to GitHub with one; kista holds only the public half. Once:
 
 ```sh
-ssh-keygen -t ed25519 -N '' -C waddle-ci -f publisher_key
-# kista's administrator registers the public half on the publisher:
-#   kista admin publisher key add <tenant> <publisher> publisher_key.pub -expires 365d
-# then check the key and its grants: kista answers with the publisher and what it may publish
-KISTA_PUBLISHER_KEY=publisher_key python3 extension-ci-tools/scripts/kista_publish.py --url <kista URL> --tenant <tenant> --check
-# keep it as the secret of an environment, then delete the file
-gh api -X PUT repos/<owner>/<repo>/environments/release
+d=$(mktemp -d)    # the key stays out of the repository
+ssh-keygen -t ed25519 -N '' -C waddle-ci -f "$d/publisher_key"
+
+# kista's administrator: the publisher, what it may publish, and the key's public half
+kista admin publisher add <tenant> <publisher>
+kista admin publisher license-keys <tenant> <publisher> on    # before its key: kista records the
+                                                              # build's licence keys (kista spec 0021)
+kista admin grant add <tenant> -principal publisher:<publisher> -verb publish -channel <channel> -extension waddle
+kista admin publisher key add <tenant> <publisher> "$d/publisher_key.pub" -expires 365d
+
+# check the key and its grant: kista answers with the publisher and what it may publish
+KISTA_PUBLISHER_KEY="$d/publisher_key" python3 extension-ci-tools/scripts/kista_publish.py \
+  --url <kista URL> --tenant <tenant> --channel <channel> --check
+
+# an environment only v* tags may deploy to, the key as its secret, and the variables
+gh api -X PUT repos/<owner>/<repo>/environments/release --input - \
+  <<< '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}'
+gh api -X POST repos/<owner>/<repo>/environments/release/deployment-branch-policies -f name='v*' -f type=tag
+gh secret set KISTA_PUBLISHER_KEY --env release < "$d/publisher_key"
 gh variable set KISTA_ENVIRONMENT --body release
-gh secret set KISTA_PUBLISHER_KEY --env release < publisher_key
-rm publisher_key
+gh variable set KISTA_URL --body <kista URL>
+gh variable set KISTA_TENANT --body <tenant>
+gh variable set KISTA_CHANNEL --body <channel>
+rm -r "$d"
 ```
 
-Anyone who may push a `v*` tag, on any commit, publishes. Give the `release` environment protection
-rules (required reviewers, the tags it allows), and protect `v*` tags with a ruleset. To replace the
-key, register the new one, replace the secret, then remove the old one in kista.
+Only a job of a `v*` tag may run in the `release` environment, so only it reads the key: a workflow
+pushed on a branch cannot. Anyone who may push a `v*` tag, on any commit, still publishes: protect
+`v*` tags with a ruleset, and add required reviewers to the environment. An environment without
+such rules gives the key to any workflow of the repository. To replace the key, register the new
+one, replace the secret, then remove the old one in kista.
 
-For kista to record the build's licence keys (kista spec 0021), a server administrator also marks
-the publisher (`kista admin publisher license-keys <tenant> <publisher> on`) before registering its
-key. With Enterest, Enterest builds and publishes instead.
+With Enterest, Enterest builds and publishes instead.
 
 kista checks each build and signs it with the channel's key: no signing key is needed in CI. wasm
 builds are skipped until kista takes them. See kista's
