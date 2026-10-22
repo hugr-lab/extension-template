@@ -44,4 +44,4 @@ binding) and, for a licensed one, how to set its licence key before the first re
 - `scripts/test-bootstrap.sh`: the bootstrap's own checks (no build); `scripts/test-kista.sh`: the
   publish, install and load check on two built copies, which `template.yml` runs.
 - The rest is DuckDB's template, merged from it when we take a change. The branches follow
-  DuckDB's; `main` builds against DuckDB `v2.0-cyanoptera`, the commit kista is tested against.
+  DuckDB's; `main` builds against the DuckDB v2.0.0 release, the commit kista is tested against.
