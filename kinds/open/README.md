@@ -60,7 +60,7 @@ kista admin publisher key add <tenant> <publisher> "$d/publisher_key.pub" -expir
 # check the key and its grant: kista answers with the publisher and what it may publish
 # the fork's publication script, at the commit distribution.yml pins (docs/UPDATING.md)
 curl -fsSLo "$d/kista_publish.py" \
-  https://raw.githubusercontent.com/hugr-lab/extension-ci-tools/a06cd0bc082c51dd44e12a612889f36486d01d20/scripts/kista_publish.py
+  https://raw.githubusercontent.com/hugr-lab/extension-ci-tools/c501c26be0c1fe484639138b449355ccc30b945a/scripts/kista_publish.py
 KISTA_PUBLISHER_KEY="$d/publisher_key" python3 "$d/kista_publish.py" \
   --url <kista URL> --tenant <tenant> --channel <channel> --check
 
