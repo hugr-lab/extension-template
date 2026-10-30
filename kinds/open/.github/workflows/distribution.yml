@@ -40,10 +40,10 @@ jobs:
     name: Publish to kista
     needs: build
     if: startsWith(github.ref, 'refs/tags/v') && vars.KISTA_URL != ''
-    uses: hugr-lab/extension-ci-tools/.github/workflows/_kista_publish.yml@a06cd0bc082c51dd44e12a612889f36486d01d20 # kista sdk-v0.2.0
+    uses: hugr-lab/extension-ci-tools/.github/workflows/_kista_publish.yml@c501c26be0c1fe484639138b449355ccc30b945a # kista sdk-v0.3.0
     with:
       extension_name: waddle
-      ci_tools_version: a06cd0bc082c51dd44e12a612889f36486d01d20
+      ci_tools_version: c501c26be0c1fe484639138b449355ccc30b945a
       kista_url: ${{ vars.KISTA_URL }}
       tenant: ${{ vars.KISTA_TENANT }}
       channel: ${{ vars.KISTA_CHANNEL }}

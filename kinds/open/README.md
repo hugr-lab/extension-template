@@ -60,7 +60,7 @@ kista admin publisher key add <tenant> <publisher> "$d/publisher_key.pub" -expir
 # check the key and its grant: kista answers with the publisher and what it may publish
 # the fork's publication script, at the commit distribution.yml pins (docs/UPDATING.md)
 curl -fsSLo "$d/kista_publish.py" \
-  https://raw.githubusercontent.com/hugr-lab/extension-ci-tools/a06cd0bc082c51dd44e12a612889f36486d01d20/scripts/kista_publish.py
+  https://raw.githubusercontent.com/hugr-lab/extension-ci-tools/c501c26be0c1fe484639138b449355ccc30b945a/scripts/kista_publish.py
 KISTA_PUBLISHER_KEY="$d/publisher_key" python3 "$d/kista_publish.py" \
   --url <kista URL> --tenant <tenant> --channel <channel> --check
 
@@ -85,6 +85,12 @@ one, replace the secret, then remove the old one in kista.
 kista checks each build and signs it with the channel's key: no signing key is needed in CI. wasm
 builds are skipped until kista takes them. See kista's
 [Publishing](https://hugr-lab.github.io/duckdb-extension-repository/publishing/) page.
+
+The kista job also takes `catalogue: true` in place of `channel` (into the tenant's catalogue only,
+for the channels' rules to take, with a tenant-wide publish grant; a publisher with a hold publishes
+so), and `entry_summary` and `icon` (a square PNG of the repository, 64 to 512 pixels), which
+set the catalogue entry's summary and icon after its builds; see the fork's
+[KISTA.md](https://github.com/hugr-lab/extension-ci-tools/blob/main/KISTA.md).
 
 To publish to DuckDB's community repository as well, submit the extension as the
 [community extensions](https://github.com/duckdb/community-extensions) repository describes: it

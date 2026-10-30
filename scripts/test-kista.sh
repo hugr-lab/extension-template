@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # The template's end-to-end check: publishes a built open and a built licensed copy to a kista with
-# hugr-lab/extension-ci-tools' kista_publish.py, signed with a publisher key (kista spec 0023), then
-# installs and loads both from it with the DuckDB the copies were built with. Removed by bootstrap.sh.
+# hugr-lab/extension-ci-tools' kista_publish.py, signed with a publisher key (kista spec 0023): the
+# open one into a channel, the licensed one into the catalogue (kista spec 0033), each entry with a
+# summary and the licensed one with an icon (kista spec 0036); then places the licensed one in the
+# channel, and installs and loads both from it with the DuckDB the copies were built with. Removed by
+# bootstrap.sh.
 #
 #   scripts/test-kista.sh <kista binary> <open copy> <open name> <licensed copy> <licensed name> <work dir>
 #
@@ -69,10 +72,14 @@ ka migrate >/dev/null
 ka tenant create acme >/dev/null
 ka channel create acme/prod -kind signed >/dev/null
 ka key add acme/prod -signer file:prod.pem -active >/dev/null
-ka version add "$duckdb_version" -kind "$version_kind" >/dev/null
+# the version's core extensions, read from the copies' DuckDB checkout (kista spec 0030)
+"$kista" duckdb core-extensions -dir "$open/duckdb" -commit "$(git -C "$open/duckdb" rev-parse HEAD)" >"$work/core.txt"
+ka version add "$duckdb_version" -kind "$version_kind" -core-extensions "$work/core.txt" >/dev/null
 ka channel versions acme/prod -add "$duckdb_version" >/dev/null
 ka publisher add acme ci >/dev/null
 ka grant add acme -principal publisher:ci -verb publish -channel prod >/dev/null
+# the catalogue takes a tenant-wide grant
+ka grant add acme -principal publisher:ci -verb publish -extension "$lic_name" >/dev/null
 # the publisher's key, as a developer makes it; the script takes the file's path
 mkdir -m 700 "$work/publisher"
 ssh-keygen -q -t ed25519 -N '' -C ci -f "$work/publisher/key"
@@ -88,23 +95,56 @@ for _ in $(seq 1 60); do
 done
 curl -sf "http://127.0.0.1:$port/readyz" >/dev/null || { cat "$work/serve.log" >&2; exit 1; }
 
-# the key and its grants, as _kista_publish.yml checks them first
-who=$(SSL_CERT_FILE=$work/ca.pem KISTA_PUBLISHER_KEY=$work/publisher/key python3 "$lic/extension-ci-tools/scripts/kista_publish.py" \
-	--url "https://127.0.0.1:$port" --tenant acme --channel prod --check)
-[[ $who == *'"publisher":"ci"'* ]] || { echo "test-kista: the key's check did not name the publisher: $who" >&2; exit 1; }
+publish() { SSL_CERT_FILE=$work/ca.pem KISTA_PUBLISHER_KEY=$work/publisher/key python3 "$lic/extension-ci-tools/scripts/kista_publish.py" \
+	--url "https://127.0.0.1:$port" --tenant acme "$@"; }
 
-# publish both as _kista_publish.yml does: from the artifacts' directories, one name at a time
+# the key and its grants, as _kista_publish.yml checks them first
+for where in "--channel=prod --name=$open_name" "--catalogue --name=$lic_name"; do
+	# shellcheck disable=SC2086 # two flags
+	who=$(publish $where --check)
+	[[ $who == *'"publisher":"ci"'* ]] || { echo "test-kista: the key's check did not name the publisher: $who" >&2; exit 1; }
+done
+
+# the licensed entry's icon: a 64x64 PNG of the chunks kista takes
+python3 - "$work/icon.png" <<'PY'
+import struct, sys, zlib
+def chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+rows = b"".join(b"\0" + bytes((255, 200, 0)) * 64 for _ in range(64))
+png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 64, 64, 8, 2, 0, 0, 0))
+       + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+open(sys.argv[1], "wb").write(png)
+PY
+
+# publish both as _kista_publish.yml does: from the artifacts' directories, one name at a time; the
+# open one into the channel, the licensed one into the catalogue, each with its entry's metadata
 for ext in "$open_ext" "$lic_ext"; do
 	name=$(basename "$ext" .duckdb_extension)
 	platform=$("$kista" ext inspect "$ext" | awk '$1 == "platform:" {print $2}')
 	mkdir -p "$work/artifacts/$name-$duckdb_version-extension-$platform"
 	cp "$ext" "$work/artifacts/$name-$duckdb_version-extension-$platform/"
-	SSL_CERT_FILE=$work/ca.pem KISTA_PUBLISHER_KEY=$work/publisher/key python3 "$lic/extension-ci-tools/scripts/kista_publish.py" \
-		--url "https://127.0.0.1:$port" --tenant acme --channel prod --visibility public --name "$name" \
-		--postfix="" --summary "$work/summary.md" "$work/artifacts"
+	if [ "$name" = "$open_name" ]; then
+		where=(--channel=prod --entry-summary="The open waddle")
+	else
+		where=(--catalogue --entry-summary="The licensed waddle" --icon="$work/icon.png")
+	fi
+	publish "${where[@]}" --visibility public --name "$name" --postfix="" --summary "$work/summary.md" "$work/artifacts"
 done
 grep -q "$open_name" "$work/summary.md" && grep -q "$lic_name" "$work/summary.md" ||
 	{ echo "test-kista: the job summary does not list both" >&2; exit 1; }
+
+# the entries' metadata, as kista keeps it
+icon_sha=$(python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$work/icon.png")
+meta=$(ka catalogue meta acme publisher:ci "$open_name")
+[[ $meta == *"summary: The open waddle"* && $meta == *"icon: -"* ]] ||
+	{ echo "test-kista: $open_name's entry: $meta" >&2; exit 1; }
+meta=$(ka catalogue meta acme publisher:ci "$lic_name")
+[[ $meta == *"summary: The licensed waddle"* && $meta == *"icon: $icon_sha 64x64"* ]] ||
+	{ echo "test-kista: $lic_name's entry: $meta" >&2; exit 1; }
+
+# the licensed one is in the catalogue only: a channel administrator places it in the channel
+lic_version=$("$kista" ext inspect "$lic_ext" | awk '$1 == "extension" && $2 == "version:" {print $3}')
+ka release place acme/prod -name "$lic_name" -source publisher:ci -version "$lic_version" >/dev/null
 
 # install and load both from kista with DuckDB at the copies' commit (built, not linked into it)
 sql() { HOME=$work/home "$open/build/release/duckdb" -noheader -list -c "SET autoinstall_known_extensions = false;
