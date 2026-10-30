@@ -72,7 +72,9 @@ ka migrate >/dev/null
 ka tenant create acme >/dev/null
 ka channel create acme/prod -kind signed >/dev/null
 ka key add acme/prod -signer file:prod.pem -active >/dev/null
-ka version add "$duckdb_version" -kind "$version_kind" >/dev/null
+# the version's core extensions, read from the copies' DuckDB checkout (kista spec 0030)
+"$kista" duckdb core-extensions -dir "$open/duckdb" -commit "$(git -C "$open/duckdb" rev-parse HEAD)" >"$work/core.txt"
+ka version add "$duckdb_version" -kind "$version_kind" -core-extensions "$work/core.txt" >/dev/null
 ka channel versions acme/prod -add "$duckdb_version" >/dev/null
 ka publisher add acme ci >/dev/null
 ka grant add acme -principal publisher:ci -verb publish -channel prod >/dev/null
