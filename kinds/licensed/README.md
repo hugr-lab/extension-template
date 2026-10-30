@@ -107,6 +107,12 @@ builds are skipped until kista takes them. See kista's
 [Publishing](https://hugr-lab.github.io/duckdb-extension-repository/publishing/) and
 [Licensing](https://hugr-lab.github.io/duckdb-extension-repository/licensing/) pages.
 
+The kista job also takes `catalogue: true` in place of `channel` (into the tenant's catalogue only,
+for the channels' rules to take, with a tenant-wide publish grant; a publisher with a hold publishes
+so), and `entry_summary` and `icon` (a square PNG of the repository, 64 to 512 pixels), which
+set the catalogue entry's summary and icon after its builds; see the fork's
+[KISTA.md](https://github.com/hugr-lab/extension-ci-tools/blob/main/KISTA.md).
+
 ## Installing from kista
 
 DuckDB reads the channel's keys from its `.well-known` file through httpfs. A private release (the

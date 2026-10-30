@@ -18,7 +18,7 @@ concurrency:
 env:
   # the kista the copies are published to: a commit of hugr-lab/duckdb-extension-repository's main
   # (not KISTA_*: kista refuses an environment variable of its prefix that is not a setting)
-  TEMPLATE_KISTA_COMMIT: b013a3da5910b34fb262d7fa23446a1e2e263227
+  TEMPLATE_KISTA_COMMIT: 0357561976fc754e2d14768c624a67fb887d2a5b
 
 jobs:
   bootstrap:
